@@ -238,7 +238,7 @@
 // 設定（全站只有這裡要改）
 // =====================================================================
 const Q = new URLSearchParams(location.search);
-let DB = Q.get("db") || "https://skjhs-anson-default-rtdb.asia-southeast1.firebasedatabase.app";
+let DB = Q.get("db") || "https://test-pi-3edc7-default-rtdb.asia-southeast1.firebasedatabase.app";
 if (!/^https?:\/\//.test(DB)) DB = "https://" + DB;
 DB = DB.replace(/\/+$/, "");
 const DEMO = Q.has("demo");                           // 網址加 ?demo 看示範資料
