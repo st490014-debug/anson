@@ -1,0 +1,761 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>南投特用作物病蟲害動態監測儀表板</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root { --bg:#eef2ec; --card:#fff; --ink:#1d2b1f; --quiet:#5f6b5f; --line:#dbe3d8;
+          --side:#17492b; --side2:#1f5d38; --green:#2f7d32; --red:#c62828; --amber:#c98a00; --blue:#1565c0; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+         font-family:"Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif; }
+  .app { display:grid; grid-template-columns:200px 1fr; min-height:100vh; }
+  aside { background:var(--side); color:#fff; padding:16px 10px; position:sticky; top:0; height:100vh; overflow:auto; }
+  .brand { font-weight:700; font-size:16px; padding:6px 10px 16px; }
+  nav a { display:block; padding:10px 12px; border-radius:8px; color:#d7e8da; text-decoration:none; font-size:14px; cursor:pointer; margin-bottom:2px; }
+  nav a:hover, nav a.on { background:var(--side2); color:#fff; }
+  nav .nh { font-size:12px; color:#9cc5a5; padding:14px 12px 4px; }
+  .content { padding:16px 20px 28px; min-width:0; }
+  header { text-align:center; margin-bottom:14px; }
+  h1 { margin:0; font-size:24px; color:var(--side); }
+  .sub { color:var(--quiet); font-size:13px; }
+  .view { display:none; }
+  .view.on { display:block; }
+  .bar { display:flex; gap:10px; flex-wrap:wrap; justify-content:space-between; align-items:center; margin-bottom:14px; }
+  .kpis { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:14px; }
+  .kpi { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px 14px; }
+  .kpi b { font-size:26px; display:block; } .kpi span { font-size:12px; color:var(--quiet); }
+  .grid { display:grid; grid-template-columns:repeat(12,1fr); gap:14px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px; min-width:0; scroll-margin-top:12px; }
+  .card h2 { margin:0 0 10px; font-size:16px; color:var(--side); }
+  .s6 { grid-column:span 6; } .s12 { grid-column:span 12; }
+  select, button, input { font:inherit; padding:6px 10px; border:1px solid var(--line); border-radius:6px; background:#fff; }
+  button { cursor:pointer; }
+  button.pri { background:var(--green); color:#fff; border:0; font-weight:600; }
+  .tag { padding:2px 8px; border-radius:10px; color:#fff; font-size:12px; white-space:nowrap; }
+  .tablewrap { overflow-x:auto; max-height:320px; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { padding:6px 8px; border-bottom:1px solid var(--line); text-align:left; white-space:nowrap; }
+  .hg { display:grid; gap:6px; }
+  .cell { border-radius:6px; padding:8px 4px; text-align:center; font-size:12px; color:#fff; }
+  .rl { font-size:12px; color:var(--quiet); align-self:center; }
+  .chartbox { height:300px; }
+
+  /* ---- 總覽：南投縣示意地圖 ---- */
+  #cMap { text-align:center; } #cMap svg { width:100%; max-height:440px; }
+  #cMap .town.link { cursor:pointer; transition:fill-opacity .15s; }
+  #cMap .town.link:hover { fill-opacity:.8; stroke:#17492b; stroke-width:3; }
+  #cMap .link { cursor:pointer; }
+  #cMap .nohit { pointer-events:none; }
+  .legend { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--quiet); margin-top:6px; }
+  .legend i { flex:0 0 140px; height:10px; border-radius:5px; background:linear-gradient(90deg,#fff3a0,#ffb300,#ef5350,#b71c1c); }
+  .golinks { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:10px; margin-bottom:14px; }
+  .golink { display:flex; align-items:center; justify-content:space-between; gap:10px; cursor:pointer;
+            background:linear-gradient(90deg,#17492b,#2f7d32); color:#fff; border-radius:12px; padding:12px 16px; text-decoration:none; }
+  .golink b { font-size:16px; } .golink span { font-size:12px; opacity:.9; }
+  .golink .go { background:#fff; color:#17492b; font-weight:700; border-radius:8px; padding:7px 12px; white-space:nowrap; font-size:13px; opacity:1; }
+  .golink:hover { filter:brightness(1.08); }
+  .alertbox { display:flex; gap:12px; }
+  .alertbox .ic { width:44px; height:44px; border-radius:8px; background:var(--red); color:#fff; display:flex; align-items:center; justify-content:center; font-size:24px; flex:none; }
+  .alertbox.ok .ic { background:var(--green); }
+  .alertbox h3 { margin:0 0 6px; color:var(--red); font-size:17px; } .alertbox.ok h3 { color:var(--green); }
+  .alertbox dl { margin:0; display:grid; grid-template-columns:64px 1fr; row-gap:3px; font-size:14px; }
+  .alertbox dt { color:var(--quiet); } .alertbox dd { margin:0; }
+  .alist { margin-top:10px; border-top:1px solid var(--line); padding-top:8px; font-size:13px; }
+  .alist div { padding:4px 0; display:flex; justify-content:space-between; gap:8px; }
+
+  /* ---- 選擇茶園 ---- */
+  .pickwrap { background:linear-gradient(160deg,#17492b,#2f7d32 60%,#6aa84f); color:#fff; border-radius:16px; padding:28px 20px; }
+  .pickwrap h2 { margin:0; font-size:24px; text-align:center; }
+  .pickwrap .psub { margin:6px 0 22px; opacity:.9; text-align:center; }
+  #pickGrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:16px; }
+  .gcard { text-align:left; display:flex; flex-direction:column; gap:6px; padding:18px; border-radius:14px;
+           border:0; font:inherit; background:#fff; color:var(--ink); min-height:150px; }
+  .gcard b { font-size:18px; } .gcard .gt { color:var(--quiet); font-size:14px; }
+  .gcard .gh { margin-top:auto; font-size:13px; color:var(--quiet); }
+  .gcard.open { cursor:pointer; box-shadow:0 6px 18px rgba(0,0,0,.25); transition:transform .15s; }
+  .gcard.open:hover { transform:translateY(-3px); }
+  .gcard.open .gh { color:var(--green); font-weight:600; }
+  .gcard.off { background:rgba(255,255,255,.72); cursor:not-allowed; filter:grayscale(.6); }
+  .gbadge { align-self:flex-start; font-size:12px; padding:2px 10px; border-radius:10px; background:#9aa39a; color:#fff; }
+  .gbadge.on { background:var(--green); } .gbadge.here { background:var(--blue); }
+
+  /* ---- 茶園即時巡檢 ---- */
+  #gAlert { display:none; background:#fdecea; border:1px solid #f5c2c0; color:var(--red);
+            border-radius:10px; padding:10px 14px; margin-bottom:14px; font-weight:600; }
+  #gFollow { display:none; background:#e3eefb; border:1px solid #b6cff0; color:var(--blue);
+             border-radius:10px; padding:10px 14px; margin-bottom:14px; font-weight:600; }
+  #gFollow a { color:var(--blue); cursor:pointer; text-decoration:underline; }
+  #gMap { height:320px; border-radius:8px; }
+  .state { display:flex; align-items:center; gap:10px; margin-bottom:6px; }
+  .dot { width:12px; height:12px; border-radius:50%; background:#9aa39a; flex:none; }
+  .bigstate { font-size:24px; font-weight:700; }
+  .label { color:var(--quiet); font-size:14px; min-height:20px; }
+  .pbar { height:10px; background:#e7ece5; border-radius:5px; overflow:hidden; margin:10px 0 4px; }
+  .pbar i { display:block; height:100%; width:0; background:var(--green); transition:width .4s; }
+  .facts { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:10px; }
+  .facts div { border:1px solid var(--line); border-radius:8px; padding:8px; }
+  .facts b { display:block; font-size:18px; } .facts span { color:var(--quiet); font-size:12px; }
+  .ctrl { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+  .ctrl button { border:0; color:#fff; padding:9px 18px; font-weight:600; }
+  .ctrl .go { background:var(--green); } .ctrl .stop { background:var(--red); }
+  .ctrl button:disabled { opacity:.45; cursor:not-allowed; }
+  #cmdNote { font-size:13px; color:var(--amber); min-height:18px; margin-top:6px; }
+  .result { margin-top:12px; border-radius:10px; padding:14px; color:#fff; text-align:center; background:#9aa39a; }
+  .result b { display:block; font-size:30px; } .result span { font-size:13px; opacity:.95; }
+  .qr { margin:6px 0 8px; padding:6px 10px; border-radius:8px; background:#eef5ee; font-size:14px; }
+  .qr.warn { background:#fff4e0; }
+
+  @media (max-width:900px) {
+    .app { grid-template-columns:1fr; } aside { position:static; height:auto; display:flex; overflow-x:auto; padding:8px; }
+    .brand, nav .nh { display:none; } nav { display:flex; gap:4px; } nav a { white-space:nowrap; margin:0; }
+    .s6 { grid-column:span 12; } .kpis { grid-template-columns:repeat(2,1fr); }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+<aside>
+  <div class="brand">🌿 南投縣</div>
+  <nav id="nav"></nav>
+</aside>
+<div class="content" id="top">
+  <header>
+    <h1 id="title">南投特用作物病蟲害動態監測儀表板</h1>
+    <div class="sub" id="status">讀取中…</div>
+  </header>
+
+  <!-- ===================== 總覽（南投縣） ===================== -->
+  <div class="view" id="vCounty">
+    <div class="bar">
+      <div>
+        <select id="rangeSel">
+          <option value="1">最近 24 小時</option><option value="7" selected>最近 7 天</option>
+          <option value="30">最近 30 天</option><option value="0">全部</option>
+        </select>
+        <select id="cGardenSel"><option value="">全部茶園</option></select>
+      </div>
+      <div class="sub">資料每 10 秒自動更新</div>
+    </div>
+    <div class="golinks" id="goLinks"></div>
+    <div class="kpis">
+      <div class="kpi"><b id="ckN">0</b><span>巡檢站次</span></div>
+      <div class="kpi"><b id="ckD">0</b><span>發現病斑</span></div>
+      <div class="kpi"><b id="ckS">0</b><span>定向噴灑</span></div>
+      <div class="kpi"><b id="ckH">0</b><span>普通以上警示</span></div>
+    </div>
+    <div class="grid">
+      <section class="card s6" id="secMap"><h2>病害熱點地圖</h2><div id="cMap"></div>
+        <div class="legend">低 <i></i> 高　（顏色越紅＝病斑越多、越嚴重）</div><div class="sub" id="cMapRank"></div>
+        <p class="sub">示意地圖：位置依茶園 QR 定位樁的經緯度換算；熱度以輕微 1、普通 2、嚴重 3 分加權。<b>點選「名間鄉」或「點我進入」標籤，可進入茶園即時巡檢。</b></p></section>
+      <section class="card s6" id="secTrend"><h2>時間序列趨勢（每日病斑筆數）</h2><div class="chartbox"><canvas id="cTrend"></canvas></div></section>
+      <section class="card s6" id="secAlert"><h2>警示通知</h2><div id="cAlertBox"></div><div class="alist" id="cAlertList"></div></section>
+      <section class="card s6"><h2>茶園內病斑熱力圖（最近一次巡檢）</h2><div id="cHeat"></div>
+        <p class="sub">R＝去程側、L＝回程側；綠＝無感染、黃＝輕微、橘＝普通、紅＝嚴重、灰＝不確定</p></section>
+      <section class="card s12" id="secHist"><h2>歷史記錄與匯出</h2>
+        <p><button class="pri" id="cCsvBtn">匯出 CSV</button> <button class="pri" id="cXlsBtn">匯出 Excel（.xls）</button></p>
+        <div class="tablewrap"><table id="cTbl"></table></div></section>
+      <section class="card s12" id="secSet"><h2>系統設定</h2>
+        <div class="sub" id="setInfo"></div>
+        <p><input id="dbIn" size="60" placeholder="Firebase Realtime Database 網址"> <button id="dbBtn">套用並重新載入</button>
+        <button id="demoBtn">切換示範資料</button></p></section>
+    </div>
+  </div>
+
+  <!-- ===================== 選擇茶園 ===================== -->
+  <div class="view" id="vPicker">
+    <div class="pickwrap">
+      <h2>茶園即時巡檢</h2>
+      <div class="psub" id="pickSub">請選擇茶園</div>
+      <div id="pickGrid"></div>
+    </div>
+  </div>
+
+  <!-- ===================== 茶園即時巡檢 ===================== -->
+  <div class="view" id="vGarden">
+    <div class="bar">
+      <div><button id="backBtn">← 回南投縣總覽</button> <button id="switchBtn">切換茶園</button></div>
+      <div><button id="gCsvBtn">匯出本茶園 CSV</button></div>
+    </div>
+    <div id="gFollow"></div>
+    <div id="gAlert"></div>
+    <div class="grid">
+      <section class="card s6">
+        <h2>巡檢車 mBot2（<span id="carName"></span>）</h2>
+        <div class="state"><span class="dot" id="carDot"></span><span class="bigstate" id="carState">讀取中…</span></div>
+        <div class="label" id="carLabel"></div>
+        <div class="pbar"><i id="carBar"></i></div>
+        <div class="sub" id="carProgress">—</div>
+        <div class="facts">
+          <div><b id="carSpray">0</b><span>本趟噴灑</span></div>
+          <div><b id="carRuns">0</b><span>本茶園巡檢趟數</span></div>
+          <div><b id="carSeen">—</b><span>最後回報</span></div>
+        </div>
+        <div class="ctrl" id="ctrl">
+          <button class="go" id="btnStart">▶ 開始巡檢（示範）</button>
+          <button class="stop" id="btnStop">■ 停止巡檢（示範）</button>
+        </div>
+        <div id="cmdNote"></div>
+        <div class="sub" id="linkNote"></div>
+      </section>
+      <section class="card s6">
+        <h2>樹莓派 AI 辨識（<span id="piName"></span>）</h2>
+        <div class="state"><span class="dot" id="piDot"></span><span class="bigstate" id="piState">讀取中…</span></div>
+        <div class="label" id="piLabel"></div>
+        <div class="qr" id="piGarden"></div>
+        <div class="result" id="lastResult"><b>—</b><span>尚無辨識結果</span></div>
+        <div class="facts">
+          <div><b id="piToday">0</b><span>今日辨識站次</span></div>
+          <div><b id="piTodaySpray">0</b><span>今日噴灑</span></div>
+          <div><b id="piSeen">—</b><span>最後回報</span></div>
+        </div>
+      </section>
+      <section class="card s12">
+        <div class="kpis" style="margin:0">
+          <div class="kpi"><b id="gkN">0</b><span>巡檢站次</span></div>
+          <div class="kpi"><b id="gkD">0</b><span>發現病斑</span></div>
+          <div class="kpi"><b id="gkS">0</b><span>定向噴灑</span></div>
+          <div class="kpi"><b id="gkR">0%</b><span>噴灑比例（相對全面噴灑）</span></div>
+        </div>
+      </section>
+      <section class="card s6"><h2>茶園地圖（QR 定位｜藍框＝巡檢車目前所在）</h2><div id="gMap"></div></section>
+      <section class="card s6"><h2>茶園內病斑熱力圖（最近一次巡檢）</h2><div id="gHeat"></div>
+        <p class="sub">R＝去程巡檢側、L＝回程巡檢側；綠＝無感染、黃＝輕微、橘＝普通、紅＝嚴重、灰＝不確定</p></section>
+      <section class="card s12"><h2>病斑數量趨勢（每小時）</h2><div style="height:220px"><canvas id="gTrend"></canvas></div></section>
+      <section class="card s12"><h2>辨識紀錄（樹莓派上傳）</h2><div class="tablewrap"><table id="gTbl"></table></div></section>
+      <section class="card s12"><h2>巡檢車出勤紀錄</h2><div class="tablewrap"><table id="runTbl"></table></div></section>
+    </div>
+  </div>
+</div>
+</div>
+
+<script>
+// =====================================================================
+// 設定（全站只有這裡要改）
+// =====================================================================
+const Q = new URLSearchParams(location.search);
+let DB = Q.get("db") || "https://skjhs-anson-default-rtdb.asia-southeast1.firebasedatabase.app";
+if (!/^https?:\/\//.test(DB)) DB = "https://" + DB;
+DB = DB.replace(/\/+$/, "");
+const DEMO = Q.has("demo");                           // 網址加 ?demo 看示範資料
+const DEVICE = Q.get("device") || "mbot2-01";         // 要和樹莓派程式的 CAR_DEVICE 相同
+const PI = Q.get("pi") || "pi-01";                    // 要和樹莓派程式的 DEVICE 相同
+const REFRESH_MS = 10000;
+const CAR_ONLINE_SEC = 45, PI_ONLINE_SEC = 60;        // 超過幾秒沒回報就顯示離線
+
+// 茶園清單：id 要和 QR 定位樁的茶園代碼一致；open=true 才有即時巡檢頁，其他顯示「佈署中」
+// 實際座標以樹莓派掃到的 QR 碼為準（存在 Firebase /gardens），這裡的座標只在還沒掃過時使用
+const GARDENS = [
+  { id: "MJ-A", name: "名間松柏嶺A區", town: "名間鄉", crop: "茶葉",   lat: 23.8341, lng: 120.6452, open: true },
+  { id: "MJ-B", name: "名間松柏嶺B區", town: "名間鄉", crop: "茶葉",   lat: 23.8355, lng: 120.6470, open: true },
+  { id: "LG-C", name: "鹿谷凍頂C區",   town: "鹿谷鄉", crop: "烏龍茶", lat: 23.7449, lng: 120.7871, open: false },
+  { id: "YC-D", name: "魚池日月潭D區", town: "魚池鄉", crop: "紅茶",   lat: 23.8963, lng: 120.9347, open: false },
+  { id: "RA-E", name: "仁愛合歡山E區", town: "仁愛鄉", crop: "高冷茶", lat: 24.0245, lng: 121.1360, open: false },
+  { id: "ZS-F", name: "竹山杉林溪F區", town: "竹山鎮", crop: "高山茶", lat: 23.6178, lng: 120.8003, open: false }
+];
+const G_BY = Object.fromEntries(GARDENS.map(g => [g.id, g]));
+
+// ===== 等級（和樹莓派 teabot_pi.py 一致）=====
+const SEV = { none: 0, low: 1, medium: 2, high: 3 };
+const COLORS = { none: "#2f7d32", low: "#c9b400", medium: "#e08a00", high: "#c62828", unsure: "#8a948a" };
+const LEVEL = { none: "無感染", low: "輕微", medium: "普通", high: "嚴重" };
+const CAR_STATE = { idle: "待命中", scan: "起點準備", moving: "巡檢中", done: "巡檢完成", stopped: "已中止" };
+const PI_STATE = { ready: "準備好了", waiting: "等待出發", moving: "車子移動中", inspecting: "辨識中", offline: "程式已結束" };
+const $ = id => document.getElementById(id);
+const isUnsure = r => r.level === "unsure";
+const isSick = r => !isUnsure(r) && r.severity && r.severity !== "none";
+const resultText = r => isUnsure(r) ? "不確定" : (LEVEL[r.severity] || r.severity || "—");
+const resultColor = r => isUnsure(r) ? COLORS.unsure : (COLORS[r.severity] || "#999");
+function ago(t) {
+  if (!t) return "—";
+  const s = Math.max(0, Math.round((Date.now() - t) / 1000));
+  return s < 60 ? s + " 秒前" : s < 3600 ? Math.round(s / 60) + " 分前" : new Date(t).toLocaleString("zh-TW");
+}
+// 茶園資訊：清單 + Firebase /gardens（QR 掃到的名稱與座標優先）
+function gInfo(id) { return Object.assign({ id, name: id }, G_BY[id] || {}, gardensDb[id] || {}, { id }); }
+
+// =====================================================================
+// 資料
+// =====================================================================
+let det = [], gardensDb = {}, carRuns = {}, carStatus = null, piStatus = null;
+let VIEW = "county", CUR = null;
+
+async function load() {
+  try {
+    if (!DEMO) {
+      const rq = encodeURIComponent('"$key"');
+      const [d, g, runs] = await Promise.all([
+        fetch(`${DB}/detections.json?orderBy=${rq}&limitToLast=2000`).then(r => r.json()),
+        fetch(`${DB}/gardens.json`).then(r => r.json()),
+        fetch(`${DB}/mbot2/${DEVICE}/runs.json?orderBy=${rq}&limitToLast=50`).then(r => r.json()).catch(() => null)]);
+      if (d && d.error) throw new Error(d.error);
+      det = Object.values(d || {}).filter(r => r && r.time).sort((a, b) => a.time - b.time);
+      gardensDb = g && !g.error ? g : {};
+      carRuns = runs && !runs.error ? runs : {};
+    }
+    $("status").textContent = (DEMO ? "示範資料｜" : "") + "最後更新 " + new Date().toLocaleTimeString("zh-TW");
+    render();
+  } catch (e) {
+    $("status").textContent = "讀取失敗：請確認資料庫網址與規則（" + e.message + "）";
+  }
+}
+
+// Firebase 即時串流（瀏覽器內建 EventSource）
+function stream(url, onData) {
+  let es, retry = 0;
+  const open = () => {
+    es = new EventSource(url);
+    const handle = ev => { retry = 0; onData(JSON.parse(ev.data)); };
+    es.addEventListener("put", handle);
+    es.addEventListener("patch", handle);
+    es.addEventListener("cancel", () => { $("status").textContent = "Firebase 拒絕讀取：請檢查資料庫規則"; es.close(); });
+    es.onerror = () => { if (es.readyState === 2) setTimeout(open, Math.min(30000, 2000 * ++retry)); };
+  };
+  open();
+}
+function applyPut(obj, p) {
+  if (p.path === "/") return p.data;
+  const keys = p.path.slice(1).split("/"), out = { ...(obj || {}) };
+  let o = out;
+  keys.slice(0, -1).forEach(k => { o[k] = { ...(o[k] || {}) }; o = o[k]; });
+  o[keys[keys.length - 1]] = p.data;
+  return out;
+}
+
+// =====================================================================
+// 頁面切換：#（總覽）、#gardens（選擇茶園）、#MJ-A（茶園即時巡檢）
+// =====================================================================
+function go(hash) { location.hash = hash || ""; }
+function route() {
+  const h = decodeURIComponent(location.hash.slice(1));
+  if (h === "gardens") { VIEW = "picker"; CUR = null; }
+  else if (G_BY[h] && G_BY[h].open) { VIEW = "garden"; CUR = h; }
+  else { VIEW = "county"; CUR = null; }
+  ["vCounty", "vPicker", "vGarden"].forEach(v => $(v).classList.toggle("on", v === { county: "vCounty", picker: "vPicker", garden: "vGarden" }[VIEW]));
+  $("title").textContent = VIEW === "garden" ? `${gInfo(CUR).name}｜茶園即時巡檢控管` :
+    VIEW === "picker" ? "茶園即時巡檢" : "南投特用作物病蟲害動態監測儀表板";
+  buildNav();
+  window.scrollTo(0, 0);
+  render();
+  if (VIEW === "garden" && gmap) setTimeout(() => gmap.invalidateSize(), 50);
+}
+window.addEventListener("hashchange", route);
+
+function buildNav() {
+  const sec = [["top", "總覽"], ["secMap", "地圖熱點"], ["secTrend", "趨勢分析"], ["secAlert", "警示通知"], ["secHist", "歷史記錄／匯出"], ["secSet", "系統設定"]];
+  let h = `<a data-go="" class="${VIEW === "county" ? "on" : ""}">🏠 南投縣總覽</a>`;
+  if (VIEW === "county") h += sec.slice(1).map(([id, t]) => `<a data-sec="${id}">　${t}</a>`).join("");
+  h += `<div class="nh">茶園即時巡檢</div>`;
+  h += GARDENS.filter(g => g.open).map(g => `<a data-go="${g.id}" class="${CUR === g.id ? "on" : ""}">🍵 ${g.name}</a>`).join("");
+  h += `<a data-go="gardens" class="${VIEW === "picker" ? "on" : ""}">全部茶園…</a>`;
+  $("nav").innerHTML = h;
+  $("nav").querySelectorAll("[data-go]").forEach(a => a.onclick = () => go(a.dataset.go));
+  $("nav").querySelectorAll("[data-sec]").forEach(a => a.onclick = () => $(a.dataset.sec).scrollIntoView({ behavior: "smooth" }));
+}
+
+function render() {
+  if (VIEW === "county") renderCounty();
+  else if (VIEW === "picker") renderPicker();
+  else renderGarden();
+}
+
+// 熱力圖（總覽與茶園頁共用）：最近一次巡檢的 6 站
+function drawHeat(data, el) {
+  const box = $(el);
+  if (!data.length) { box.innerHTML = '<p class="sub">尚無資料</p>'; return; }
+  const last = data[data.length - 1];
+  const run = data.filter(r => r.garden_id === last.garden_id && last.time - r.time < 300e3);
+  const n = Math.max(3, ...run.map(r => r.station || 0));
+  let h = `<div class="hg" style="grid-template-columns:40px repeat(${n},1fr)">`;
+  ["L", "R"].forEach(side => {
+    h += `<div class="rl">${side} 側</div>`;
+    for (let s = 1; s <= n; s++) {
+      const r = run.filter(x => x.side === side && x.station === s).pop();
+      h += `<div class="cell" style="background:${r ? resultColor(r) : "#c9d1c6"}">${side}${s}<br>${r ? resultText(r) + (r.sprayed ? "・噴灑" : "") : "—"}</div>`;
+    }
+  });
+  box.innerHTML = h + `</div><p class="sub">${last.garden || last.garden_id}｜${new Date(last.time).toLocaleString("zh-TW")}</p>`;
+}
+
+// 匯出
+const COLS = ["time", "garden_id", "garden", "lat", "lng", "garden_scanned", "trip", "side", "station", "level", "severity", "confidence", "votes", "sprayed"];
+const cellv = (r, c) => c === "time" ? new Date(r.time).toISOString() : Array.isArray(r[c]) ? r[c].join("/") : String(r[c] ?? "");
+function save(blob, name) { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; a.click(); }
+function exportCsv(rows, name) {
+  const lines = [COLS.join(",")].concat(rows.map(r => COLS.map(c => '"' + cellv(r, c).replace(/"/g, '""') + '"').join(",")));
+  save(new Blob(["﻿" + lines.join("\n")], { type: "text/csv" }), name);
+}
+
+// =====================================================================
+// 總覽（南投縣）
+// =====================================================================
+let cChart = null;
+// 地圖上可以點的鄉鎮：該鄉鎮第一座開放的茶園
+const TOWN_PAGE = {};
+GARDENS.filter(g => g.open).forEach(g => { if (!TOWN_PAGE[g.town]) TOWN_PAGE[g.town] = g.id; });
+
+function cRows() {
+  const g = $("cGardenSel").value, d = +$("rangeSel").value, t0 = d ? Date.now() - d * 864e5 : 0;
+  return det.filter(r => (!g || r.garden_id === g) && r.time >= t0);
+}
+function fillCGardens() {
+  const sel = $("cGardenSel"), cur = sel.value, ids = [...new Set(det.map(r => r.garden_id))];
+  sel.innerHTML = '<option value="">全部茶園</option>' + ids.map(id => `<option value="${id}">${gInfo(id).name}</option>`).join("");
+  sel.value = ids.includes(cur) ? cur : "";
+}
+function renderCounty() {
+  fillCGardens();
+  const data = cRows(), sick = data.filter(isSick);
+  $("ckN").textContent = data.length; $("ckD").textContent = sick.length;
+  $("ckS").textContent = data.filter(r => r.sprayed).length;
+  $("ckH").textContent = sick.filter(r => SEV[r.severity] >= 2).length;
+  const here = piStatus && piStatus.garden ? piStatus.garden.id : null;
+  $("goLinks").innerHTML = GARDENS.filter(g => g.open).map(g => `<a class="golink" data-go="${g.id}">
+    <div><b>🍵 ${gInfo(g.id).name}｜即時巡檢</b><br><span>${here === g.id ? "📍 巡檢車目前在這裡（QR 定位）" : "巡檢車、樹莓派 AI、每站辨識結果"}</span></div>
+    <span class="go">進入 →</span></a>`).join("");
+  $("goLinks").querySelectorAll("[data-go]").forEach(a => a.onclick = () => go(a.dataset.go));
+  drawCMap(sick); drawCTrend(sick); drawCAlert(sick); drawHeat(data, "cHeat"); drawCTable(data);
+  $("setInfo").textContent = `資料來源：${DB}（/detections、/gardens、/pi/${PI}、/mbot2/${DEVICE}）｜辨識紀錄 ${det.length} 筆` + (DEMO ? "｜目前為示範資料" : "");
+}
+
+// ----- 南投縣示意地圖（自繪，不使用外部地圖資料）-----
+const SW = 500, SH = 555;
+const DIST = [  // [鄉鎮, 多邊形座標, 標籤x, 標籤y, 底色]
+  ["草屯鎮","18,165 60,155 115,158 135,175 125,205 75,215 18,210",62,186,"#ffd600"],
+  ["南投市","18,210 75,215 70,245 55,260 18,255",42,236,"#f5b942"],
+  ["名間鄉","10,255 55,260 75,255 85,290 45,295 12,290",38,278,"#ffd54f"],
+  ["中寮鄉","75,215 125,205 135,175 165,215 160,255 140,270 85,290 75,255 70,245",110,242,"#ffe96b"],
+  ["國姓鄉","135,105 170,90 210,85 200,125 180,150 165,215 135,175 115,158 105,140",150,130,"#9ccc3a"],
+  ["埔里鎮","180,150 200,125 235,150 285,175 270,195 235,215 190,225 165,215",225,182,"#5f9a1f"],
+  ["魚池鄉","165,215 190,225 235,215 240,260 215,290 175,295 158,285 160,255",197,258,"#5fa57a"],
+  ["仁愛鄉","210,85 260,70 300,25 395,5 440,95 425,170 430,215 385,290 330,262 245,290 240,260 235,215 270,195 285,175 235,150 200,125",335,140,"#2f7d0b"],
+  ["信義鄉","200,280 245,290 330,262 385,290 390,360 380,440 330,480 300,520 270,545 250,535 215,510 150,490 122,445 125,400 135,350 170,335 172,310 200,305",245,410,"#3d8de0"],
+  ["水里鄉","150,235 160,255 158,285 175,295 215,290 200,305 172,310 170,340 130,330 125,300 140,270",152,312,"#1e9be0"],
+  ["集集鎮","85,285 130,275 135,300 128,318 95,312 80,300",104,298,"#8fd0f0"],
+  ["鹿谷鄉","80,300 95,312 128,318 130,330 135,350 125,400 105,420 70,390 62,330",98,360,"#eda078"],
+  ["竹山鎮","45,295 85,290 80,300 62,330 70,390 105,420 130,435 60,425 15,420 12,330",48,385,"#ee8a5f"]
+];
+function project(lat, lng) {   // 經緯度 → 示意地圖座標
+  const x = (lng - 120.585) / 0.75 * 480, y = (24.2 - lat) / 0.75 * SH;
+  return [Math.max(15, Math.min(SW - 15, x)), Math.max(15, Math.min(SH - 15, y))];
+}
+function drawCMap(sick) {
+  const byG = {};
+  sick.forEach(r => {
+    const gi = gInfo(r.garden_id), lat = r.lat ?? gi.lat, lng = r.lng ?? gi.lng;
+    if (lat == null || lng == null) return;
+    const g = (byG[r.garden_id] = byG[r.garden_id] || { id: r.garden_id, lat, lng, name: gi.name, n: 0, w: 0 });
+    g.n++; g.w += SEV[r.severity] || 1;
+  });
+  const list = Object.values(byG).sort((a, b) => b.w - a.w), max = Math.max(1, ...list.map(g => g.w));
+  let svg = `<svg viewBox="0 0 ${SW} ${SH}" xmlns="http://www.w3.org/2000/svg"><defs>
+    <radialGradient id="hg"><stop offset="0" stop-color="#b71c1c" stop-opacity=".95"/><stop offset=".4" stop-color="#ef5350" stop-opacity=".7"/>
+      <stop offset=".7" stop-color="#ffb300" stop-opacity=".4"/><stop offset="1" stop-color="#fff3a0" stop-opacity="0"/></radialGradient>
+    <clipPath id="cl">${DIST.map(d => `<polygon points="${d[1]}" stroke="#000" stroke-width="16" stroke-linejoin="round"/>`).join("")}</clipPath></defs>`;
+  svg += DIST.map(d => `<polygon points="${d[1]}" fill="#e6ece3" stroke="#e6ece3" stroke-width="16" stroke-linejoin="round"/>`).join("");
+  svg += DIST.map(d => { const p = TOWN_PAGE[d[0]];
+    return `<polygon class="town${p ? " link" : ""}" ${p ? `data-go="${p}"` : ""} points="${d[1]}" fill="${d[4]}" fill-opacity="${p ? ".62" : ".38"}" stroke="#fff" stroke-width="2" stroke-linejoin="round"><title>${d[0]}${p ? "（點擊進入茶園即時巡檢）" : ""}</title></polygon>`; }).join("");
+  svg += '<g class="nohit" clip-path="url(#cl)">' + list.map(g => { const [x, y] = project(g.lat, g.lng), k = g.w / max, r = 45 + 55 * k;
+    return `<circle cx="${x}" cy="${y}" r="${r}" fill="url(#hg)" opacity="${0.55 + 0.45 * k}"/>`; }).join("") + "</g>";
+  svg += DIST.map(d => `<text class="nohit" x="${d[2]}" y="${d[3] + (TOWN_PAGE[d[0]] ? 13 : 0)}" text-anchor="middle" font-size="14" font-weight="600" fill="#1d2b1f" paint-order="stroke" stroke="#fff" stroke-width="3">${d[0]}</text>`).join("");
+  svg += list.filter(g => !(G_BY[g.id] || {}).open).map(g => { const [x, y] = project(g.lat, g.lng);
+    return `<circle cx="${x}" cy="${y}" r="5" fill="#fff" stroke="#b71c1c" stroke-width="2"><title>${g.name}：病斑 ${g.n} 筆，熱度 ${g.w}</title></circle>`; }).join("");
+  // 開放的茶園：圓點＋「點我進入」標籤（巡檢車所在的茶園加藍框）
+  const here = piStatus && piStatus.garden ? piStatus.garden.id : null;
+  GARDENS.filter(g => g.open).forEach((g0, i) => {
+    const g = gInfo(g0.id), [x, y] = project(g.lat, g.lng), lx = 100, ly = 18 + i * 38, s = byG[g.id];
+    svg += `<line class="nohit" x1="${x}" y1="${y}" x2="${lx}" y2="${ly + 14}" stroke="#17492b" stroke-width="1.5" stroke-dasharray="4 3"/>`;
+    svg += `<circle class="link" data-go="${g.id}" cx="${x}" cy="${y}" r="7" fill="#fff" stroke="${here === g.id ? "#1565c0" : s ? "#b71c1c" : "#2f7d32"}" stroke-width="${here === g.id ? 4 : 2.5}"><title>${g.name}：病斑 ${s ? s.n : 0} 筆（點擊進入）</title></circle>`;
+    svg += `<g class="link" data-go="${g.id}"><rect x="${lx - 90}" y="${ly - 2}" width="180" height="30" rx="15" fill="${here === g.id ? "#1565c0" : "#17492b"}" stroke="#fff" stroke-width="2"/>` +
+      `<text x="${lx}" y="${ly + 18}" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">${g.name}｜點我進入 ▶</text>` +
+      `<title>${g.name}${here === g.id ? "（巡檢車目前在這裡）" : ""}</title></g>`;
+  });
+  $("cMap").innerHTML = svg + "</svg>";
+  $("cMap").querySelectorAll("[data-go]").forEach(el => el.addEventListener("click", () => go(el.dataset.go)));
+  $("cMapRank").innerHTML = list.length ? "熱點排行：" + list.slice(0, 5).map((g, i) => `${i + 1}. ${g.name}（${g.n} 筆）`).join("　") : "所選範圍內沒有病斑，地圖不顯示熱點";
+}
+function drawCTrend(sick) {
+  if (!window.Chart) return;
+  const days = [...new Set(sick.map(r => new Date(r.time).toLocaleDateString("sv-SE")))].sort();
+  const sets = ["low", "medium", "high"].map(s => ({ label: LEVEL[s], borderColor: COLORS[s], backgroundColor: COLORS[s], tension: .3, pointRadius: 3,
+    data: days.map(d => sick.filter(r => r.severity === s && new Date(r.time).toLocaleDateString("sv-SE") === d).length) }));
+  if (cChart) cChart.destroy();
+  cChart = new Chart($("cTrend"), { type: "line", data: { labels: days, datasets: sets },
+    options: { maintainAspectRatio: false, plugins: { legend: { position: "top" } },
+      scales: { y: { beginAtZero: true, ticks: { precision: 0 }, title: { display: true, text: "病斑筆數" } } } } });
+}
+function drawCAlert(sick) {
+  const ord = [...sick].sort((a, b) => (SEV[b.severity] - SEV[a.severity]) || (b.time - a.time));
+  const top = ord[0], box = $("cAlertBox");
+  if (!top) { box.className = "alertbox ok"; box.innerHTML = '<div class="ic">✓</div><div><h3>目前沒有病斑紀錄</h3><div class="sub">所選範圍內未偵測到病蟲害</div></div>'; $("cAlertList").innerHTML = ""; return; }
+  box.className = "alertbox";
+  box.innerHTML = `<div class="ic">!</div><div><h3>最嚴重案例偵測</h3><dl>
+    <dt>地點</dt><dd>${gInfo(top.garden_id).name} ${top.side}${top.station}（${top.trip}）</dd>
+    <dt>等級</dt><dd><span class="tag" style="background:${resultColor(top)}">${resultText(top)}</span>${top.sprayed ? "　已定向噴灑" : ""}</dd>
+    <dt>信心</dt><dd>${Math.round((top.confidence || 0) * 100)}%</dd>
+    <dt>時間</dt><dd>${new Date(top.time).toLocaleString("zh-TW")}</dd></dl></div>`;
+  const recent = sick.filter(r => SEV[r.severity] >= 2).slice(-5).reverse();
+  $("cAlertList").innerHTML = recent.length ? "<b>近期普通以上警示</b>" + recent.map(r =>
+    `<div><span>${new Date(r.time).toLocaleString("zh-TW")}　${gInfo(r.garden_id).name} ${r.side}${r.station}</span><span class="tag" style="background:${resultColor(r)}">${resultText(r)}</span></div>`).join("") : "";
+}
+function drawCTable(data) {
+  const head = "<tr><th>時間</th><th>茶園</th><th>QR 定位</th><th>趟次</th><th>位置</th><th>結果</th><th>信心</th><th>噴灑</th></tr>";
+  $("cTbl").innerHTML = head + [...data].reverse().slice(0, 100).map(r => `<tr><td>${new Date(r.time).toLocaleString("zh-TW")}</td>
+    <td>${gInfo(r.garden_id).name}</td><td>${r.garden_scanned === false ? "⚠ 預設" : "✅"}</td><td>${r.trip || ""}</td><td>${r.side || ""}${r.station || ""}</td>
+    <td><span class="tag" style="background:${resultColor(r)}">${resultText(r)}</span></td>
+    <td>${r.confidence != null ? Math.round(r.confidence * 100) + "%" : "—"}</td><td>${r.sprayed ? "是" : "否"}</td></tr>`).join("");
+}
+$("cCsvBtn").onclick = () => exportCsv(cRows(), "病蟲害巡檢紀錄.csv");
+$("cXlsBtn").onclick = () => {
+  const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  const html = '<html><head><meta charset="utf-8"></head><body><table border="1"><tr>' + COLS.map(c => "<th>" + c + "</th>").join("") + "</tr>" +
+    cRows().map(r => "<tr>" + COLS.map(c => "<td>" + esc(cellv(r, c)) + "</td>").join("") + "</tr>").join("") + "</table></body></html>";
+  save(new Blob([html], { type: "application/vnd.ms-excel" }), "病蟲害巡檢紀錄.xls");
+};
+$("rangeSel").onchange = $("cGardenSel").onchange = render;
+$("dbIn").value = DB;
+$("dbBtn").onclick = () => { const v = $("dbIn").value.trim(); if (v) location.search = "?db=" + encodeURIComponent(v); };
+$("demoBtn").onclick = () => { location.search = DEMO ? (Q.get("db") ? "?db=" + encodeURIComponent(Q.get("db")) : "") : "?demo"; };
+
+// =====================================================================
+// 選擇茶園
+// =====================================================================
+function renderPicker() {
+  const here = piStatus && piStatus.garden ? piStatus.garden.id : null;
+  $("pickSub").textContent = `共 ${GARDENS.length} 座茶園，目前開放 ${GARDENS.filter(g => g.open).length} 座`;
+  $("pickGrid").innerHTML = GARDENS.map(g => g.open
+    ? `<button class="gcard open" data-go="${g.id}"><span class="gbadge ${here === g.id ? "here" : "on"}">${here === g.id ? "📍 巡檢車在這裡" : "開放中"}</span><b>${gInfo(g.id).name}</b><span class="gt">${g.town}・${g.crop}</span><span class="gh">點擊進入即時巡檢 →</span></button>`
+    : `<div class="gcard off" aria-disabled="true"><span class="gbadge">佈署中</span><b>${g.name}</b><span class="gt">${g.town}・${g.crop}</span><span class="gh">儀表板佈署中</span></div>`).join("");
+  $("pickGrid").querySelectorAll("[data-go]").forEach(b => b.onclick = () => go(b.dataset.go));
+}
+
+// =====================================================================
+// 茶園即時巡檢
+// =====================================================================
+let gmap = null, gmapFor = null, glayer = null, gChart = null;
+const gRows = () => CUR ? det.filter(r => r.garden_id === CUR) : [];
+// 出勤紀錄：樹莓派有記茶園就依茶園分；舊紀錄沒有茶園欄位就都顯示
+const gRuns = () => Object.entries(carRuns).map(([id, r]) => ({ id, ...r }))
+  .filter(r => !r.garden || r.garden === CUR).sort((a, b) => (a.start || 0) - (b.start || 0));
+
+function renderGarden() {
+  if (!CUR) return;
+  const data = gRows(), sick = data.filter(isSick);
+  $("gkN").textContent = data.length; $("gkD").textContent = sick.length;
+  $("gkS").textContent = data.filter(r => r.sprayed).length;
+  $("gkR").textContent = data.length ? Math.round(100 * data.filter(r => r.sprayed).length / data.length) + "%" : "0%";
+  const recent = sick.filter(r => SEV[r.severity] >= 2 && Date.now() - r.time < 600e3), al = $("gAlert");
+  if (recent.length) {
+    const r = recent[recent.length - 1];
+    al.style.display = "block";
+    al.textContent = `⚠ 預警：${gInfo(r.garden_id).name} ${r.side}${r.station}（${r.trip}）發現「${resultText(r)}」病斑，已定向噴灑`;
+  } else al.style.display = "none";
+  drawGMap(data); drawHeat(data, "gHeat"); drawGTrend(sick); drawGTable(data); renderPi(); renderCar();
+}
+
+function drawGMap(data) {
+  if (!window.L || !CUR) return;
+  if (!gmap) {
+    gmap = L.map("gMap");
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 18, attribution: "© OpenStreetMap" }).addTo(gmap);
+    glayer = L.layerGroup().addTo(gmap);
+  }
+  glayer.clearLayers();
+  const here = piStatus && piStatus.garden ? piStatus.garden.id : null;
+  const ids = [...new Set([CUR, ...GARDENS.filter(g => g.open).map(g => g.id), ...Object.keys(gardensDb)])];
+  ids.forEach(id => {
+    const g = gInfo(id);
+    if (g.lat == null) return;
+    const recs = det.filter(r => r.garden_id === id), n = recs.filter(isSick).length, cur = id === CUR, car = id === here;
+    L.circleMarker([g.lat, g.lng], { radius: Math.min(cur ? 26 : 18, (cur ? 10 : 6) + n), color: car ? "#1565c0" : (n ? COLORS.high : COLORS.none),
+      weight: car ? 4 : 2, fillColor: n ? COLORS.high : COLORS.none, fillOpacity: cur ? 0.5 : 0.25 })
+      .bindPopup(`<b>${g.name}</b>（${id}）${car ? "<br>📍 巡檢車目前在這裡" : ""}` +
+        `<br>座標 ${(+g.lat).toFixed(5)}, ${(+g.lng).toFixed(5)}` +
+        `<br>辨識 ${recs.length} 站次，病斑 ${n} 筆` +
+        `<br>最後巡檢：${g.last_patrol ? new Date(g.last_patrol).toLocaleString("zh-TW") : "—"}` +
+        `<br>最後 QR 定位：${g.last_scan ? new Date(g.last_scan).toLocaleString("zh-TW") : "—"}` +
+        (id !== CUR && G_BY[id] && G_BY[id].open ? `<br><a href="#${id}">切換到這座茶園 →</a>` : ""))
+      .bindTooltip(g.name + (car ? "（巡檢車）" : ""), { permanent: cur || car, direction: "top", offset: [0, -8] })
+      .addTo(glayer);
+  });
+  if (gmapFor !== CUR) { const g = gInfo(CUR); if (g.lat != null) gmap.setView([g.lat, g.lng], 16); gmapFor = CUR; }
+}
+function drawGTrend(sick) {
+  if (!window.Chart) return;
+  const bins = {};
+  sick.forEach(r => { const d = new Date(r.time);
+    const k = `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:00`; bins[k] = (bins[k] || 0) + 1; });
+  const labels = Object.keys(bins), values = Object.values(bins);
+  if (!gChart) {
+    gChart = new Chart($("gTrend"), { type: "bar", data: { labels, datasets: [{ label: "病斑筆數", data: values, backgroundColor: COLORS.medium }] },
+      options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } } });
+  } else { gChart.data.labels = labels; gChart.data.datasets[0].data = values; gChart.update(); }
+}
+function drawGTable(data) {
+  const head = "<tr><th>時間</th><th>趟次</th><th>位置</th><th>結果</th><th>信心</th><th>3 張判讀</th><th>噴灑</th><th>QR 定位</th></tr>";
+  const body = [...data].reverse().slice(0, 200).map(r => `<tr>
+    <td>${new Date(r.time).toLocaleString("zh-TW")}</td><td>${r.trip || ""}</td><td>${r.side || ""}${r.station || ""}</td>
+    <td><span class="tag" style="background:${resultColor(r)}">${resultText(r)}</span></td>
+    <td>${r.confidence != null ? Math.round(r.confidence * 100) + "%" : "—"}</td>
+    <td>${(r.votes || []).join("、")}</td><td>${r.sprayed ? "是" : "否"}</td><td>${r.garden_scanned === false ? "⚠ 預設" : "✅"}</td></tr>`).join("");
+  $("gTbl").innerHTML = head + (body || '<tr><td colspan="8" class="sub">尚無資料</td></tr>');
+}
+$("gCsvBtn").onclick = () => exportCsv(gRows(), `${gInfo(CUR).name}_巡檢紀錄.csv`);
+$("backBtn").onclick = () => go("");
+$("switchBtn").onclick = () => go("gardens");
+
+// ----- 樹莓派狀態（/pi/<PI>，含 QR 定位的茶園）-----
+function renderPi() {
+  const st = piStatus || {}, on = st.time && (Date.now() - st.time) / 1000 < PI_ONLINE_SEC && st.state !== "offline";
+  $("piDot").style.background = !piStatus ? "#9aa39a" : on ? (st.state === "inspecting" ? COLORS.medium : COLORS.none) : COLORS.high;
+  $("piState").textContent = !piStatus ? "尚未收到樹莓派資料" : on ? (PI_STATE[st.state] || st.state) : "離線";
+  $("piLabel").textContent = !piStatus ? "請確認樹莓派已開機、已連上網路" : (st.label || "");
+  $("piSeen").textContent = ago(st.time);
+  const g = st.garden, gb = $("piGarden"), fl = $("gFollow");
+  if (g && g.name) {
+    gb.className = "qr" + (g.scanned ? "" : " warn");
+    gb.innerHTML = `巡檢車所在茶園：<b>${g.name}</b>（${g.id}）　` + (g.scanned ? "✅ QR 定位" : "⚠ 未掃到 QR，使用預設茶園") +
+      (g.lat != null ? `<br><span class="sub">座標 ${(+g.lat).toFixed(5)}, ${(+g.lng).toFixed(5)}</span>` : "");
+  } else { gb.className = "qr warn"; gb.textContent = "巡檢車所在茶園：尚未取得（等待樹莓派掃描 QR 定位樁）"; }
+  if (g && g.id && g.id !== CUR) {
+    fl.style.display = "block";
+    fl.innerHTML = `📍 巡檢車目前在「${g.name}」（QR 定位），不是這座茶園。` +
+      (G_BY[g.id] && G_BY[g.id].open ? ` <a data-go="${g.id}">切換到 ${g.name} →</a>` : "");
+    fl.querySelectorAll("[data-go]").forEach(a => a.onclick = () => go(a.dataset.go));
+  } else fl.style.display = "none";
+  const mine = gRows(), today = mine.filter(r => new Date(r.time).toDateString() === new Date().toDateString());
+  $("piToday").textContent = today.length;
+  $("piTodaySpray").textContent = today.filter(r => r.sprayed).length;
+  const last = mine[mine.length - 1], box = $("lastResult");
+  if (last) {
+    box.style.background = resultColor(last);
+    box.innerHTML = `<b>${last.side || ""}${last.station || ""}　${resultText(last)}${last.sprayed ? "・已噴灑" : ""}</b>` +
+      `<span>信心 ${Math.round((last.confidence || 0) * 100)}%｜${new Date(last.time).toLocaleTimeString("zh-TW")}</span>`;
+  } else { box.style.background = "#9aa39a"; box.innerHTML = "<b>—</b><span>尚無辨識結果</span>"; }
+}
+
+// ----- 巡檢車狀態（方案 A：樹莓派推算巡檢進度 → Firebase /mbot2/<車號>）-----
+const BUSY = ["scan", "moving"];
+function carOnline() { return carStatus && carStatus.time && (Date.now() - carStatus.time) / 1000 < CAR_ONLINE_SEC; }
+function renderCar() {
+  const st = carStatus || {}, on = carOnline(), busy = on && BUSY.includes(st.state);
+  $("carDot").style.background = !carStatus ? "#9aa39a" : on ? (busy ? COLORS.medium : COLORS.none) : COLORS.high;
+  $("carState").textContent = !carStatus ? "尚未收到巡檢車資料" : on ? (CAR_STATE[st.state] || st.state) : "離線";
+  $("carLabel").textContent = on ? (st.label || "") : (carStatus ? "最後狀態：" + (CAR_STATE[st.state] || st.state) : "請確認樹莓派已開機、已連上網路（巡檢進度由樹莓派回報）");
+  const total = st.total || 6, done = st.done || 0;
+  $("carBar").style.width = Math.min(100, 100 * done / total) + "%";
+  $("carProgress").textContent = `已巡檢 ${done} / ${total} 站`;
+  const cur = carRuns[st.run];
+  const from = cur && cur.start ? cur.start - 15e3 : null, to = cur && cur.end ? cur.end + 15e3 : Infinity;
+  $("carSpray").textContent = from ? gRows().filter(r => r.sprayed && r.time >= from && r.time <= to).length : 0;
+  $("carRuns").textContent = gRuns().length;
+  $("carSeen").textContent = ago(st.time);
+  $("btnStart").disabled = busy; $("btnStop").disabled = !busy;
+  renderRunTable();
+}
+function renderRunTable() {
+  const head = "<tr><th>開始</th><th>結束</th><th>完成站數</th><th>噴灑次數</th><th>結果</th></tr>";
+  const mine = gRows();
+  const body = gRuns().reverse().slice(0, 50).map(r => {
+    const from = (r.start || 0) - 15e3, to = r.end ? r.end + 15e3 : Infinity;
+    const sprays = mine.filter(x => x.sprayed && x.time >= from && x.time <= to).length;
+    const done = r.done ?? Object.keys(r.stations || {}).length;
+    return `<tr><td>${r.start ? new Date(r.start).toLocaleString("zh-TW") : "—"}</td>
+      <td>${r.end ? new Date(r.end).toLocaleTimeString("zh-TW") : "進行中"}</td><td>${done}</td><td>${sprays}</td>
+      <td>${r.end ? (r.aborted ? "中止" : "完成") : "—"}</td></tr>`;
+  }).join("");
+  $("runTbl").innerHTML = head + (body || '<tr><td colspan="5" class="sub">尚無紀錄</td></tr>');
+}
+
+// =====================================================================
+// 示範模式（網址加 ?demo）
+// =====================================================================
+let demoTimer = null;
+function rand(seed) { let s = seed; return () => (s = (s * 9301 + 49297) % 233280) / 233280; }
+const ROUTE = [["去程", "R", 1], ["去程", "R", 2], ["去程", "R", 3], ["回程", "L", 3], ["回程", "L", 2], ["回程", "L", 1]];
+function demoRec(time, gid, trip, side, station, sev) {
+  const g = gInfo(gid);
+  return { time, garden_id: gid, garden: g.name, lat: g.lat, lng: g.lng, garden_scanned: true, trip, side, station,
+    level: { none: "0_healthy", low: "1_mild", medium: "2_moderate", high: "3_severe" }[sev],
+    severity: sev, confidence: 0.9, votes: Array(3).fill(LEVEL[sev]), sprayed: sev !== "none" };
+}
+function demoInit() {
+  const now = Date.now(), rnd = rand(7);
+  gardensDb = {};
+  GARDENS.forEach(g => gardensDb[g.id] = { name: g.name, lat: g.lat, lng: g.lng, last_patrol: now - 3600e3, last_scan: now - 3600e3 });
+  GARDENS.forEach((g, gi) => {
+    for (let d = 13; d >= 1; d--) ROUTE.forEach(([trip, side, st], i) => {
+      const sick = rnd() < 0.12 + gi * 0.04 + (13 - d) * 0.01, s = sick ? ["low", "medium", "high"][Math.floor(rnd() * 3)] : "none";
+      det.push(demoRec(now - d * 864e5 - gi * 36e5 + i * 8000, g.id, trip, side, st, s));
+    });
+  });
+  const lv = { R2: "low", L3: "high" };
+  ROUTE.forEach(([trip, side, st], i) => det.push(demoRec(now - 3600e3 + i * 9000, "MJ-A", trip, side, st, lv[side + st] || "none")));
+  det.sort((a, b) => a.time - b.time);
+  carRuns = { r1: { start: now - 3600e3 - 15e3, end: now - 3600e3 + 60e3, done: 6, aborted: false, garden: "MJ-A" } };
+  carStatus = { state: "idle", label: "待命", done: 0, total: 6, run: null, time: now };
+  piStatus = { state: "ready", label: "等待巡檢車出發", time: now, garden: { id: "MJ-A", name: "名間松柏嶺A區", lat: 23.8341, lng: 120.6452, scanned: true } };
+  setInterval(() => { carStatus.time = Date.now(); piStatus.time = Date.now(); render(); }, 5000);
+}
+function demoCommand(action) {
+  if (action === "start") {
+    const gid = CUR || "MJ-A", g = gInfo(gid), id = "r" + Date.now(), lv = { R2: "medium", L3: "high" };
+    piStatus = { ...piStatus, garden: { id: gid, name: g.name, lat: g.lat, lng: g.lng, scanned: true } };   // 模擬在起點掃到這座茶園的 QR
+    gardensDb[gid] = { ...gardensDb[gid], last_scan: Date.now(), last_patrol: Date.now() };
+    carRuns[id] = { start: Date.now(), garden: gid };
+    carStatus = { state: "moving", label: "前往 R1", done: 0, total: 6, run: id, time: Date.now() };
+    let i = 0; render();
+    demoTimer = setInterval(() => {
+      const [trip, side, st] = ROUTE[i];
+      piStatus = { ...piStatus, state: "inspecting", label: `${trip} ${side}${st}`, time: Date.now() };
+      det.push(demoRec(Date.now(), gid, trip, side, st, lv[side + st] || "none"));
+      carStatus = { ...carStatus, state: "moving", done: i + 1, label: i < 5 ? `前往 ${ROUTE[i + 1][1]}${ROUTE[i + 1][2]}` : "返回起點", time: Date.now() };
+      if (++i === 6) {
+        clearInterval(demoTimer); demoTimer = null;
+        Object.assign(carRuns[id], { end: Date.now(), done: 6, aborted: false });
+        carStatus = { ...carStatus, state: "done", label: "巡檢完成" };
+        piStatus = { ...piStatus, state: "ready", label: "已回到起點，等待下一趟", time: Date.now() };
+      }
+      render();
+    }, 2500);
+  } else if (action === "stop" && demoTimer) {
+    clearInterval(demoTimer); demoTimer = null;
+    Object.assign(carRuns[carStatus.run], { end: Date.now(), done: carStatus.done, aborted: true });
+    carStatus = { ...carStatus, state: "stopped", label: "已中止", time: Date.now() };
+    render();
+  }
+}
+$("btnStart").onclick = () => demoCommand("start");
+$("btnStop").onclick = () => demoCommand("stop");
+
+// =====================================================================
+// 啟動
+// =====================================================================
+$("carName").textContent = DEVICE;
+$("piName").textContent = PI;
+if (DEMO) {
+  demoInit();
+  $("status").textContent = "示範資料｜不會讀寫 Firebase";
+  $("linkNote").textContent = "示範模式：按「開始巡檢」看模擬過程";
+} else {
+  $("ctrl").style.display = "none";                   // 方案 A：mBot2 不上網，請按車上 A 鍵出發
+  $("linkNote").textContent = "請按 mBot2 的 A 鍵出發；巡檢進度與茶園位置由樹莓派回報";
+  let piTimer = null;
+  stream(`${DB}/pi/${PI}.json`, p => {
+    piStatus = applyPut(piStatus, p); render();
+    clearTimeout(piTimer); piTimer = setTimeout(load, 1500);   // 樹莓派狀態改變時順便更新辨識結果
+  });
+  stream(`${DB}/mbot2/${DEVICE}/status.json`, p => { if (p.data !== null || p.path !== "/") { carStatus = applyPut(carStatus, p); if (VIEW === "garden") renderCar(); } });
+  load();
+  setInterval(load, REFRESH_MS);
+  setInterval(() => { if (VIEW === "garden") { renderPi(); renderCar(); } }, 5000);   // 更新「幾秒前」與離線判斷
+}
+route();
+</script>
+</body>
+</html>
+
